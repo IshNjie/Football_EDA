@@ -8,14 +8,35 @@ import plotly.express as px
 import matplotlib.pyplot as plt
 
 #Cache to speed up webpage when accessing data already read in 
+
 @st.cache
-def dataLoad(year):
+def getLeagues():
+    '''
+    Connect to API and load info about League name and endpoint input
+    '''
+    leagueAbb = []
+    league = []
+    l = requests.get("https://api-football-standings.azharimm.site/leagues/")
+
+    for i in range(len(l.json()['data'])):
+        leagueAbb.append(l.json()['data'][i]['id'])
+        league.append(l.json()['data'][i]['name'])
+
+    d = {'abb':leagueAbb,'league':league}
+    df = pd.DataFrame(data=d)
+    return df
+
+@st.cache
+def dataLoad(leagues,year):
     '''
     Connect to API and load data into DataFrame
     '''
+    df = getLeagues()
+    #league code for endpoint
+    leagueCode = df[df['league'] == leagues]['abb'].values.tolist()[0]
 
     #Access API
-    r = requests.get("https://api-football-standings.azharimm.site/leagues/eng.1/standings?season={}&sort=asc".format(year))
+    r = requests.get("https://api-football-standings.azharimm.site/leagues/{}/standings?season={}&sort=asc".format(leagueCode,year))
 
     #create list of years to capture data
 
@@ -44,17 +65,22 @@ def dataLoad(year):
         pagainst.append(r['standings'][i]['stats'][5]['value'])
         rank.append(r['standings'][i]['stats'][8]['value'])
 
-    d = {'rank':rank,'Teams':teams, 'Abbreviation':abb,'Points':points, 'Wins':wins,'Draws':draws, 'Losses':losses,'played':played,'pfor':pfor, 'pagainst':pagainst}
+    d = {'rank':rank,'Teams':teams, 'Abbreviation':abb,'Points':points, 'Wins':wins,'Draws':draws, 'Losses':losses,'Played':played,'Scored':pfor, 'Conceded':pagainst}
     df = pd.DataFrame(data=d)
 
     return df, r['seasonDisplay']
 
 #Create Sidebar - all attributes of sidebar will start with st.sidebar
 st.sidebar.header('User Input Features')
+
+#SideBar - League Selection
+selectedLeague = st.sidebar.selectbox('League',getLeagues()['league'].values.tolist(),5) #default to English Premier League
+
+#Sidebar - Year Selection
 yearToday = dt.today().year
 selectedYear = st.sidebar.selectbox('Year', list(reversed(range(yearToday - 10,yearToday))))
 
-footballData = dataLoad(selectedYear)[0]
+footballData = dataLoad(selectedLeague, selectedYear)[0]
 
 #Sidebar - Team Selection
 uniqueTeam = sorted(footballData.Abbreviation.unique())
@@ -71,11 +97,11 @@ filterFootballData = footballData[(footballData.Abbreviation.isin(selectedTeam))
 st.title('Football Table Stats Explorer')
 
 st.markdown("""
-This app performs simple webscraping of Football standings in European Football
-* **Python libraries:** pandas, streamlit
+This app performs simple webscraping of Football standings in various Football leagues across the world
+* **Key Python libraries:** pandas, streamlit
 * **Data source:** [Football-Standings Github](https://github.com/azharimm/football-standings-api/).
 """)
-st.write('The below data will be showing information for the {} season'.format(dataLoad(selectedYear)[1]))
+st.write('The below data will be showing information for the {} season'.format(dataLoad(selectedLeague, selectedYear)[1]))
 
 
 st.dataframe(filterFootballData.set_index('rank'))
@@ -96,7 +122,7 @@ if st.button('Team ScatterPlot'):
     #df_selected_team.to_csv('output.csv',index=False)
     #df = pd.read_csv('output.csv')
 
-    fig = px.scatter(filterFootballData, y="pfor", x="pagainst", color = 'Teams', size = 'Points')
+    fig = px.scatter(filterFootballData, y="Scored", x="Conceded", color = 'Teams', size = 'Points')
     #fig.show()
     st.plotly_chart(fig, use_container_width=True)
     #st.pyplot(fig)
